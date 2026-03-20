@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: shared_quizzes
+    // Document ID: [6-character alphanumeric string]
+    // Fields:
+    //   - title: string (required, max 200 chars)
+    //   - description: string (required, max 1000 chars)
+    //   - questions: list (required, max 100 items)
+    //   - createdAt: number (required)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidQuiz(data) {
+      return hasOnlyAllowedFields(['title', 'description', 'questions', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.questions is list && data.questions.size() > 0 && data.questions.size() <= 100 &&
+             data.createdAt is number;
+    }
+
+    function isValidPublicQuiz(data) {
+      return hasOnlyAllowedFields(['title', 'description', 'questions', 'createdAt', 'authorUid', 'authorName', 'authorPhoto', 'playCount', 'color', 'likes']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.questions is list && data.questions.size() > 0 && data.questions.size() <= 100 &&
+             data.createdAt is number &&
+             data.authorUid is string && data.authorUid == request.auth.uid &&
+             data.authorName is string && data.authorName.size() <= 100 &&
+             data.authorPhoto is string && data.authorPhoto.size() <= 500 &&
+             data.playCount is number && data.playCount >= 0 &&
+             data.color is string && data.color.size() <= 100 &&
+             (!('likes' in data) || (data.likes is list && data.likes.size() <= 10000));
+    }
+
+    function isValidUserScore(data) {
+      return hasOnlyAllowedFields(['uid', 'displayName', 'photoURL', 'totalScore']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() <= 100 &&
+             data.photoURL is string && data.photoURL.size() <= 500 &&
+             data.totalScore is number && data.totalScore >= 0;
+    }
+
+    match /shared_quizzes/{quizId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidQuiz(request.resource.data);
+      allow update, delete: if false; // Immutable once created
+    }
+
+    match /public_quizzes/{quizId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPublicQuiz(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.authorUid == request.auth.uid && isValidPublicQuiz(request.resource.data)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playCount', 'likes']))
+      );
+      allow delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+      
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isAuthenticated() &&
+                      request.resource.data.keys().hasOnly(['text', 'authorUid', 'authorName', 'authorPhoto', 'createdAt']) &&
+                      request.resource.data.authorUid == request.auth.uid &&
+                      request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500 &&
+                      request.resource.data.createdAt is number;
+        allow update, delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && userId == request.auth.uid && isValidUserScore(request.resource.data);
+      allow update: if isAuthenticated() && userId == request.auth.uid && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalScore', 'displayName', 'photoURL']) &&
+                    request.resource.data.totalScore >= resource.data.totalScore;
+    }
+  }
+}

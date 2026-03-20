@@ -1,0 +1,5 @@
+{
+  "name": "EduAI Master - Trợ lý Ôn tập Thông minh",
+  "description": "Nền tảng ôn tập đa năng sử dụng AI để tạo bộ trắc nghiệm và câu hỏi từ tài liệu (PDF, DOCX, Text). Giao diện trực quan phong cách Padlet và Quizizz.",
+  "requestFramePermissions": []
+}
